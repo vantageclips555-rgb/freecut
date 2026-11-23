@@ -106,6 +106,14 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   server: {
+    // Proxy the owner-operated AGAR API through FreeCut's development origin.
+    // Do not put GPU/model API keys in the browser or replace this with a paid API.
+    proxy: {
+      '/api/v1': {
+        target: process.env.AGAR_API_ORIGIN || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
     port: 5173,
     strictPort: true,
     headers: {
