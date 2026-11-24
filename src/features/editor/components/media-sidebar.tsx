@@ -45,6 +45,7 @@ import {
 import { importTranscriptEditorPanel } from '@/features/editor/deps/timeline-panels'
 import { LottieBrowserPanel } from '@/features/editor/deps/lottie-browser'
 import { TransitionsPanel } from './transitions-panel'
+import { AgarGenerationPanel } from './agar-generation-panel'
 import {
   createDefaultGradientItem,
   createDefaultShapeItem,
@@ -726,7 +727,14 @@ export const MediaSidebar = memo(function MediaSidebar() {
             <div
               className={`min-h-0 flex-1 overflow-hidden ${activeTab === 'media' ? 'block' : 'hidden'}`}
             >
-              <MediaLibrary />
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="shrink-0 max-h-[45%] overflow-y-auto">
+                  <AgarGenerationPanel />
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <MediaLibrary />
+                </div>
+              </div>
             </div>
 
             {/* Text Tab */}
