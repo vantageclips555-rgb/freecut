@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { agarCapabilities, agarGenerate, agarJob, agarLogin, agarUploadImage } from '../services/agar-api'
+import {
+  agarCapabilities, agarGenerate, agarJob, agarLogin, agarUploadImage,
+  type AgarModelCapability,
+} from '../services/agar-api'
 import { importAndPlaceAgarVideo } from '../services/agar-video-integration'
 import { useMediaLibraryStore } from '../deps/media-library'
 
@@ -14,6 +17,11 @@ export function AgarGenerationPanel() {
   const projectId = useMediaLibraryStore((s) => s.currentProjectId)
   const [password, setPassword] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [models, setModels] = useState<AgarModelCapability[]>([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [visualStyle, setVisualStyle] = useState('')
+  const [cameraDirection, setCameraDirection] = useState('')
+  const [lighting, setLighting] = useState('')
   const [reference, setReference] = useState<File | null>(null)
   const [online, setOnline] = useState(false)
   const [checking, setChecking] = useState(true)
@@ -30,12 +38,23 @@ export function AgarGenerationPanel() {
     try {
       const capabilities = await agarCapabilities()
       setNeedsLogin(false)
-      setOnline(capabilities.gpu_worker_online)
-      setMessage(capabilities.gpu_worker_online
-        ? 'GPU worker detected. Model inference has not been independently verified.'
-        : 'GPU worker offline. Generation is disabled until AGAR inference is deployed.')
+      // A worker heartbeat is not proof of successful inference for every installed model.
+      // Only an actual model-level smoke-test certificate enables a choice.
+      const ready = capabilities.gpu_worker_online
+        ? capabilities.models.filter((model) => model.id && model.execution_tested === true)
+        : []
+      setModels(ready)
+      setSelectedModel((current) =>
+        ready.some((model) => model.id === current) ? current : (ready[0]?.id ?? ''),
+      )
+      setOnline(ready.length > 0)
+      setMessage(ready.length > 0
+        ? 'Verified model available. Use one of the models listed below.'
+        : 'No verified AGAR generation model online. Start and smoke-test a GPU model first.')
     } catch (error) {
       setOnline(false)
+      setModels([])
+      setSelectedModel('')
       setNeedsLogin(String(error).includes('401'))
       setMessage(String(error))
     } finally {
@@ -105,12 +124,25 @@ export function AgarGenerationPanel() {
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!projectId || !jobKey) { setMessage('Open a project first.'); return }
-    if (!online) { setMessage('AGAR GPU inference is not available.'); return }
+    if (!online || !selectedModel) { setMessage('No verified AGAR model is available.'); return }
     if (!prompt.trim()) return
+    const capability = models.find((model) => model.id === selectedModel)
+    if (!capability?.execution_tested) { setMessage('Model is not inference-verified.'); return }
+    if (reference && !capability.modes?.includes('image-to-video')) {
+      setMessage('This model does not support reference-image generation.')
+      return
+    }
+    // These are prompt instructions, not dedicated hardware camera controls.
+    const directedPrompt = [
+      prompt.trim(),
+      visualStyle ? 'Visual style: ' + visualStyle + '.' : '',
+      cameraDirection ? 'Camera direction: ' + cameraDirection + '.' : '',
+      lighting ? 'Lighting: ' + lighting + '.' : '',
+    ].filter(Boolean).join('\\n')
     setBusy(true)
     try {
       const referenceAssetId = reference ? await agarUploadImage(reference) : undefined
-      const submitted = await agarGenerate(prompt.trim(), referenceAssetId)
+      const submitted = await agarGenerate(directedPrompt, referenceAssetId, selectedModel)
       window.localStorage.setItem(jobKey, submitted.job_id)
       setJobId(submitted.job_id)
       setMessage('Real AGAR inference job queued.')
@@ -157,17 +189,65 @@ export function AgarGenerationPanel() {
         </form>
       )}
       <form onSubmit={(event) => void generate(event)} className="space-y-2">
-        <label htmlFor="agar-description" className="text-xs">Describe the scene</label>
+        <label htmlFor="agar-model" className="block text-xs">AI model (verified on this GPU)</label>
+        <select id="agar-model" value={selectedModel}
+          onChange={(event) => setSelectedModel(event.target.value)}
+          disabled={!online || busy || !!jobId}
+          className="w-full rounded border bg-background p-2 text-xs">
+          {models.length === 0 && <option value="">No verified model available</option>}
+          {models.map((model) => (
+            <option key={model.id} value={model.id}>{model.label || model.id}</option>
+          ))}
+        </select>
+        <label htmlFor="agar-description" className="block text-xs">Describe the scene</label>
         <textarea id="agar-description" value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="Cinematic aerial view of an Antarctic research station at dusk…"
           rows={4} maxLength={6000} required
           className="w-full resize-y rounded border bg-background p-2 text-sm" />
-        <label htmlFor="agar-reference-image" className="text-xs">Reference image (optional)</label>
+        <details className="rounded border border-border p-2">
+          <summary className="cursor-pointer text-xs font-semibold">Scene direction</summary>
+          <p className="my-2 text-[11px] text-muted-foreground">
+            These choices add clear instructions to your prompt. The model may not follow them
+            exactly; they are not native camera or lens controls.
+          </p>
+          <label htmlFor="agar-style" className="block text-xs">Look</label>
+          <select id="agar-style" value={visualStyle}
+            onChange={(event) => setVisualStyle(event.target.value)}
+            className="mb-2 w-full rounded border bg-background p-2 text-xs">
+            <option value="">Use prompt</option>
+            <option value="photorealistic documentary">Photorealistic documentary</option>
+            <option value="cinematic feature film">Cinematic feature film</option>
+            <option value="hand-drawn 2D animation">Hand-drawn animation</option>
+            <option value="stylized 3D animation">Stylized 3D animation</option>
+          </select>
+          <label htmlFor="agar-camera" className="block text-xs">Camera movement</label>
+          <select id="agar-camera" value={cameraDirection}
+            onChange={(event) => setCameraDirection(event.target.value)}
+            className="mb-2 w-full rounded border bg-background p-2 text-xs">
+            <option value="">Use prompt</option>
+            <option value="slow dolly-in">Slow dolly-in</option>
+            <option value="smooth lateral tracking shot">Lateral tracking</option>
+            <option value="orbit around the subject">Orbit</option>
+            <option value="static locked-off composition">Static</option>
+            <option value="rising aerial crane movement">Rising crane</option>
+          </select>
+          <label htmlFor="agar-light" className="block text-xs">Lighting</label>
+          <select id="agar-light" value={lighting}
+            onChange={(event) => setLighting(event.target.value)}
+            className="w-full rounded border bg-background p-2 text-xs">
+            <option value="">Use prompt</option>
+            <option value="soft natural daylight">Natural daylight</option>
+            <option value="warm golden-hour sunset">Golden hour</option>
+            <option value="low-key dramatic lighting">Dramatic low-key</option>
+            <option value="cool blue moonlight">Blue moonlight</option>
+          </select>
+        </details>
+        <label htmlFor="agar-reference-image" className="block text-xs">Reference image (optional)</label>
         <input id="agar-reference-image" type="file" accept="image/png,image/jpeg,image/webp"
           onChange={(event) => setReference(event.target.files?.[0] ?? null)}
           className="w-full text-xs" />
-        <button type="submit" disabled={!projectId || !online || busy || !!jobId || needsLogin}
+        <button type="submit" disabled={!projectId || !online || !selectedModel || busy || !!jobId || needsLogin}
           className="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-40">
           {busy || jobId ? 'Working…' : 'Generate video'}
         </button>
