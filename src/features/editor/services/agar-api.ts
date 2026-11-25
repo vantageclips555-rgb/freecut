@@ -6,10 +6,17 @@
  */
 const ROOT = '/api/v1'
 
+export interface AgarModelCapability {
+  id: string
+  label?: string
+  modes?: string[]
+  execution_tested?: boolean
+}
+
 export interface AgarCapabilities {
   render_worker_online: boolean
   gpu_worker_online: boolean
-  models: Array<{ id?: string; modes?: string[]; execution_tested?: boolean }>
+  models: AgarModelCapability[]
 }
 
 export interface AgarJob {
@@ -55,13 +62,18 @@ export async function agarUploadImage(file: File): Promise<string> {
   return asset.id
 }
 
-export function agarGenerate(prompt: string, referenceAssetId?: string): Promise<{ job_id: string }> {
+/** Model names come from live AGAR capabilities; the backend authoritatively rejects unavailable models. */
+export function agarGenerate(
+  prompt: string,
+  referenceAssetId?: string,
+  modelId = 'kandinsky6',
+): Promise<{ job_id: string }> {
   return json('/generations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt,
-      model: 'kandinsky6',
+      model: modelId,
       reference_asset_id: referenceAssetId ?? null,
     }),
   })
