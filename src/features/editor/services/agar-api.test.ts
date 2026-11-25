@@ -29,6 +29,20 @@ describe('AGAR same-origin API bridge', () => {
     }))
   })
 
+  it('sends an explicitly selected self-hosted model without external API calls', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ job_id: 'wan-job' }), { status: 202 }),
+    )
+    await agarGenerate('Wide mountain landscape', undefined, 'wan22-ti2v-5b')
+    const options = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(options.body as string)).toEqual({
+      prompt: 'Wide mountain landscape',
+      model: 'wan22-ti2v-5b',
+      reference_asset_id: null,
+    })
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/v1/generations')
+  })
+
   it('blocks generation status speculation by returning an actual server failure', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: 'AGAR GPU worker offline' }), {
