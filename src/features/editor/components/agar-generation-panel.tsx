@@ -138,7 +138,7 @@ export function AgarGenerationPanel() {
       visualStyle ? 'Visual style: ' + visualStyle + '.' : '',
       cameraDirection ? 'Camera direction: ' + cameraDirection + '.' : '',
       lighting ? 'Lighting: ' + lighting + '.' : '',
-    ].filter(Boolean).join('\\n')
+    ].filter(Boolean).join('\n')
     setBusy(true)
     try {
       const referenceAssetId = reference ? await agarUploadImage(reference) : undefined
