@@ -139,6 +139,10 @@ export function AgarGenerationPanel() {
       cameraDirection ? 'Camera direction: ' + cameraDirection + '.' : '',
       lighting ? 'Lighting: ' + lighting + '.' : '',
     ].filter(Boolean).join('\n')
+    if (directedPrompt.length > 6000) {
+      setMessage('Scene description and direction must total 6,000 characters or less.')
+      return
+    }
     setBusy(true)
     try {
       const referenceAssetId = reference ? await agarUploadImage(reference) : undefined
